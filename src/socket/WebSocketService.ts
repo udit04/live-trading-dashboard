@@ -1,6 +1,13 @@
 export type ChannelName = 'v2/ticker' | 'ticker' | 'l2_orderbook' | 'all_trades';
 
-export type ConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'RECONNECTING';
+export const ConnectionState = {
+  DISCONNECTED: 'DISCONNECTED',
+  CONNECTING: 'CONNECTING',
+  CONNECTED: 'CONNECTED',
+  RECONNECTING: 'RECONNECTING',
+} as const;
+
+export type ConnectionState = typeof ConnectionState[keyof typeof ConnectionState];
 
 export interface SubscriptionMessage {
   type: 'subscribe' | 'unsubscribe';
@@ -21,7 +28,7 @@ export interface SubscriptionMessage {
 export class WebSocketService {
   private url: string;
   private ws: WebSocket | null = null;
-  private connectionState: ConnectionState = 'DISCONNECTED';
+  private connectionState: ConnectionState = ConnectionState.DISCONNECTED;
   private reconnectAttempts = 0;
   private reconnectTimeoutId: any = null;
   private maxReconnectDelay = 30000; // 30 seconds
@@ -52,11 +59,11 @@ export class WebSocketService {
    * Connects to the WebSocket server.
    */
   public connect(): void {
-    if (this.connectionState === 'CONNECTED' || this.connectionState === 'CONNECTING') {
+    if (this.connectionState === ConnectionState.CONNECTED || this.connectionState === ConnectionState.CONNECTING) {
       return;
     }
 
-    this.setConnectionState(this.ws ? 'RECONNECTING' : 'CONNECTING');
+    this.setConnectionState(this.ws ? ConnectionState.RECONNECTING : ConnectionState.CONNECTING);
     this.clearReconnectTimeout();
 
     try {
@@ -82,7 +89,7 @@ export class WebSocketService {
       this.ws.close();
       this.ws = null;
     }
-    this.setConnectionState('DISCONNECTED');
+    this.setConnectionState(ConnectionState.DISCONNECTED);
     this.reconnectAttempts = 0;
   }
 
@@ -117,13 +124,13 @@ export class WebSocketService {
         this.activeSubscriptions.set(channel, new Set());
       }
       const activeSymbols = this.activeSubscriptions.get(channel)!;
-      
+
       // If this symbol is not yet active on the WebSocket, register it
       if (!activeSymbols.has(symbol)) {
         activeSymbols.add(symbol);
-        
+
         // Send subscribe message to WebSocket immediately if connected
-        if (this.connectionState === 'CONNECTED') {
+        if (this.connectionState === ConnectionState.CONNECTED) {
           this.sendSubscribeRequest(channel, [symbol]);
         }
       }
@@ -156,12 +163,12 @@ export class WebSocketService {
       // If no callbacks are left for this symbol, clear subscription
       if (callbacks.size === 0) {
         symbolMap.delete(symbol);
-        
+
         const activeSymbols = this.activeSubscriptions.get(channel);
         if (activeSymbols) {
           activeSymbols.delete(symbol);
-          
-          if (this.connectionState === 'CONNECTED') {
+
+          if (this.connectionState === ConnectionState.CONNECTED) {
             this.sendUnsubscribeRequest(channel, [symbol]);
           }
 
@@ -206,7 +213,7 @@ export class WebSocketService {
     if (!this.ws) return;
 
     this.ws.onopen = () => {
-      this.setConnectionState('CONNECTED');
+      this.setConnectionState(ConnectionState.CONNECTED);
       this.reconnectAttempts = 0;
       this.resubscribeAll();
     };
@@ -214,7 +221,7 @@ export class WebSocketService {
     this.ws.onmessage = (event: MessageEvent) => {
       try {
         const rawData = JSON.parse(event.data);
-        
+
         // Dispatch to global listeners
         this.globalMessageListeners.forEach((cb) => cb(rawData));
 
@@ -251,13 +258,13 @@ export class WebSocketService {
    * Triggers reconnection attempts with exponential backoff & randomized jitter.
    */
   private handleDisconnect(): void {
-    this.setConnectionState('DISCONNECTED');
+    this.setConnectionState(ConnectionState.DISCONNECTED);
     this.clearReconnectTimeout();
 
     // Exponential Backoff calculation: base * 2^attempts (capped at max delay) + Jitter
     const rawDelay = this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts);
     const delayWithJitter = Math.min(this.maxReconnectDelay, rawDelay) + Math.random() * 1000;
-    
+
     this.reconnectAttempts++;
     console.warn(`WebSocket disconnected. Retrying in ${Math.round(delayWithJitter)}ms (Attempt ${this.reconnectAttempts})...`);
 
@@ -274,7 +281,7 @@ export class WebSocketService {
     if (this.activeSubscriptions.size === 0) return;
 
     const channelsToSubscribe: Array<{ name: ChannelName; symbols: string[] }> = [];
-    
+
     this.activeSubscriptions.forEach((symbols, channel) => {
       if (symbols.size > 0) {
         channelsToSubscribe.push({
