@@ -1,0 +1,21 @@
+node_modules/*
+
+# Distribution directories
+dist/
+build/
+out/
+es/
+lib/
+public/build
+
+
+# Editor/OS-specific files
+.DS_Store # macOS
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
