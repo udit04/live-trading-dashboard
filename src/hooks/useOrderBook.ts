@@ -35,9 +35,14 @@ const DEFAULT_CONFIG = { precision: 2, groupingOptions: [0.01, 0.1, 1, 5, 10] };
  * Manages raw L2 orderbook aggregation, grouping, and spread calculations.
  * Features throttled state updates to maintain UI fluidness and prevent browser freeze under stress.
  */
-export function useOrderBook(symbol: string, groupingInterval: number) {
+export function useOrderBook(symbol: string) {
   const config = SYMBOL_CONFIGS[symbol] || DEFAULT_CONFIG;
   const precision = config.precision;
+
+  // Local state for groupingInterval, defaulting to the first option for the symbol
+  const [groupingInterval, setGroupingInterval] = useState<number>(() => {
+    return config.groupingOptions[0];
+  });
 
   const [state, setState] = useState<OrderBookState>({
     bids: [],
@@ -54,6 +59,12 @@ export function useOrderBook(symbol: string, groupingInterval: number) {
   const throttleTimeoutRef = useRef<any>(null);
   const prevBidsMapRef = useRef<Map<number, number>>(new Map());
   const prevAsksMapRef = useRef<Map<number, number>>(new Map());
+  const groupingIntervalRef = useRef(groupingInterval);
+
+  // Keep ref in sync
+  useEffect(() => {
+    groupingIntervalRef.current = groupingInterval;
+  }, [groupingInterval]);
 
   // Reset state when symbol changes
   useEffect(() => {
@@ -73,120 +84,132 @@ export function useOrderBook(symbol: string, groupingInterval: number) {
       clearTimeout(throttleTimeoutRef.current);
       throttleTimeoutRef.current = null;
     }
+    // Update local groupingInterval state to the default for this symbol
+    const newConfig = SYMBOL_CONFIGS[symbol] || DEFAULT_CONFIG;
+    setGroupingInterval(newConfig.groupingOptions[0]);
   }, [symbol]);
 
+  // Helper processing function that can be called either from raw message or from interval change
+  const processOrderBook = (msg: any) => {
+    if (!msg || msg.symbol !== symbol) return;
+
+    const rawBids: [string, string][] = msg.bids || [];
+    const rawAsks: [string, string][] = msg.asks || [];
+
+    // Group bids and asks using integer scaling to avoid floating-point bugs
+    const factor = Math.pow(10, precision);
+    const currentInterval = groupingIntervalRef.current;
+    const scaledInterval = Math.round(currentInterval * factor);
+
+    // Aggregate bids (round down)
+    const bidGroups = new Map<number, number>();
+    rawBids.forEach(([priceStr, sizeStr]) => {
+      const price = parseFloat(priceStr);
+      const size = parseFloat(sizeStr);
+      const scaledPrice = Math.round(price * factor);
+      const scaledGroup = Math.floor(scaledPrice / scaledInterval) * scaledInterval;
+      const roundedPrice = scaledGroup / factor;
+      bidGroups.set(roundedPrice, (bidGroups.get(roundedPrice) || 0) + size);
+    });
+
+    // Aggregate asks (round up)
+    const askGroups = new Map<number, number>();
+    rawAsks.forEach(([priceStr, sizeStr]) => {
+      const price = parseFloat(priceStr);
+      const size = parseFloat(sizeStr);
+      const scaledPrice = Math.round(price * factor);
+      const scaledGroup = Math.ceil(scaledPrice / scaledInterval) * scaledInterval;
+      const roundedPrice = scaledGroup / factor;
+      askGroups.set(roundedPrice, (askGroups.get(roundedPrice) || 0) + size);
+    });
+
+    // Sort Bids (descending), Asks (ascending)
+    const sortedBids = Array.from(bidGroups.entries()).sort((a, b) => b[0] - a[0]);
+    const sortedAsks = Array.from(askGroups.entries()).sort((a, b) => a[0] - b[0]);
+
+    // Compute spread metrics
+    const bestBid = sortedBids[0]?.[0] || 0;
+    const bestAsk = sortedAsks[0]?.[0] || 0;
+    const midPrice = (bestBid + bestAsk) / 2;
+    const spread = Math.max(0, bestAsk - bestBid);
+    const spreadBps = midPrice > 0 ? (spread / midPrice) * 10000 : 0;
+
+    // Calculate cumulative sizes and apply flash detection (>10% change)
+    const maxLevels = 20;
+    let bidCumulative = 0;
+    const newBidsMap = new Map<number, number>();
+
+    const bidsPayload: PriceLevel[] = sortedBids.slice(0, maxLevels).map(([price, size]) => {
+      bidCumulative += size;
+      newBidsMap.set(price, size);
+
+      // Check size change relative to previous grouped bids
+      const prevSize = prevBidsMapRef.current.get(price);
+      let flash: 'up' | 'down' | null = null;
+      if (prevSize !== undefined) {
+        if (size > prevSize * 1.10) flash = 'up';
+        else if (size < prevSize * 0.90) flash = 'down';
+      }
+
+      return {
+        price,
+        size,
+        cumulative: bidCumulative,
+        flash,
+      };
+    });
+
+    let askCumulative = 0;
+    const newAsksMap = new Map<number, number>();
+
+    const asksPayload: PriceLevel[] = sortedAsks.slice(0, maxLevels).map(([price, size]) => {
+      askCumulative += size;
+      newAsksMap.set(price, size);
+
+      // Check size change relative to previous grouped asks
+      const prevSize = prevAsksMapRef.current.get(price);
+      let flash: 'up' | 'down' | null = null;
+      if (prevSize !== undefined) {
+        if (size > prevSize * 1.10) flash = 'up';
+        else if (size < prevSize * 0.90) flash = 'down';
+      }
+
+      return {
+        price,
+        size,
+        cumulative: askCumulative,
+        flash,
+      };
+    });
+
+    // Update refs for next flash comparison
+    prevBidsMapRef.current = newBidsMap;
+    prevAsksMapRef.current = newAsksMap;
+
+    // Imbalance (bid volume vs ask volume of visible levels)
+    const totalVisibleBidVol = bidsPayload.reduce((acc, b) => acc + b.size, 0);
+    const totalVisibleAskVol = asksPayload.reduce((acc, a) => acc + a.size, 0);
+    const imbalance = totalVisibleAskVol > 0 ? totalVisibleBidVol / totalVisibleAskVol : 1.0;
+
+    setState({
+      bids: bidsPayload,
+      asks: asksPayload,
+      midPrice,
+      spread,
+      spreadBps,
+      imbalance,
+      isLoading: false,
+    });
+  };
+
+  // Recalculate instantly when groupingInterval changes locally
   useEffect(() => {
-    const processOrderBook = (msg: any) => {
-      if (!msg || msg.symbol !== symbol) return;
+    if (latestMessageRef.current) {
+      processOrderBook(latestMessageRef.current);
+    }
+  }, [groupingInterval, symbol, precision]);
 
-      const rawBids: [string, string][] = msg.bids || [];
-      const rawAsks: [string, string][] = msg.asks || [];
-
-      // 1. Group bids and asks using integer scaling to avoid floating-point bugs
-      const factor = Math.pow(10, precision);
-      const scaledInterval = Math.round(groupingInterval * factor);
-
-      // Aggregate bids (round down)
-      const bidGroups = new Map<number, number>();
-      rawBids.forEach(([priceStr, sizeStr]) => {
-        const price = parseFloat(priceStr);
-        const size = parseFloat(sizeStr);
-        const scaledPrice = Math.round(price * factor);
-        const scaledGroup = Math.floor(scaledPrice / scaledInterval) * scaledInterval;
-        const roundedPrice = scaledGroup / factor;
-        bidGroups.set(roundedPrice, (bidGroups.get(roundedPrice) || 0) + size);
-      });
-
-      // Aggregate asks (round up)
-      const askGroups = new Map<number, number>();
-      rawAsks.forEach(([priceStr, sizeStr]) => {
-        const price = parseFloat(priceStr);
-        const size = parseFloat(sizeStr);
-        const scaledPrice = Math.round(price * factor);
-        const scaledGroup = Math.ceil(scaledPrice / scaledInterval) * scaledInterval;
-        const roundedPrice = scaledGroup / factor;
-        askGroups.set(roundedPrice, (askGroups.get(roundedPrice) || 0) + size);
-      });
-
-      // 2. Sort Bids (descending), Asks (ascending)
-      const sortedBids = Array.from(bidGroups.entries()).sort((a, b) => b[0] - a[0]);
-      const sortedAsks = Array.from(askGroups.entries()).sort((a, b) => a[0] - b[0]);
-
-      // 3. Compute spread metrics
-      const bestBid = sortedBids[0]?.[0] || 0;
-      const bestAsk = sortedAsks[0]?.[0] || 0;
-      const midPrice = (bestBid + bestAsk) / 2;
-      const spread = Math.max(0, bestAsk - bestBid);
-      const spreadBps = midPrice > 0 ? (spread / midPrice) * 10000 : 0;
-
-      // 4. Calculate cumulative sizes and apply flash detection (>10% change)
-      const maxLevels = 20;
-      let bidCumulative = 0;
-      const newBidsMap = new Map<number, number>();
-
-      const bidsPayload: PriceLevel[] = sortedBids.slice(0, maxLevels).map(([price, size]) => {
-        bidCumulative += size;
-        newBidsMap.set(price, size);
-
-        // Check size change relative to previous grouped bids
-        const prevSize = prevBidsMapRef.current.get(price);
-        let flash: 'up' | 'down' | null = null;
-        if (prevSize !== undefined) {
-          if (size > prevSize * 1.10) flash = 'up';
-          else if (size < prevSize * 0.90) flash = 'down';
-        }
-
-        return {
-          price,
-          size,
-          cumulative: bidCumulative,
-          flash,
-        };
-      });
-
-      let askCumulative = 0;
-      const newAsksMap = new Map<number, number>();
-
-      const asksPayload: PriceLevel[] = sortedAsks.slice(0, maxLevels).map(([price, size]) => {
-        askCumulative += size;
-        newAsksMap.set(price, size);
-
-        // Check size change relative to previous grouped asks
-        const prevSize = prevAsksMapRef.current.get(price);
-        let flash: 'up' | 'down' | null = null;
-        if (prevSize !== undefined) {
-          if (size > prevSize * 1.10) flash = 'up';
-          else if (size < prevSize * 0.90) flash = 'down';
-        }
-
-        return {
-          price,
-          size,
-          cumulative: askCumulative,
-          flash,
-        };
-      });
-
-      // Update refs for next flash comparison
-      prevBidsMapRef.current = newBidsMap;
-      prevAsksMapRef.current = newAsksMap;
-
-      // 5. Imbalance (bid volume vs ask volume of visible levels)
-      const totalVisibleBidVol = bidsPayload.reduce((acc, b) => acc + b.size, 0);
-      const totalVisibleAskVol = asksPayload.reduce((acc, a) => acc + a.size, 0);
-      const imbalance = totalVisibleAskVol > 0 ? totalVisibleBidVol / totalVisibleAskVol : 1.0;
-
-      setState({
-        bids: bidsPayload,
-        asks: asksPayload,
-        midPrice,
-        spread,
-        spreadBps,
-        imbalance,
-        isLoading: false,
-      });
-    };
-
+  useEffect(() => {
     // WebSocket message receiver with throttling to 50ms intervals
     const onMessage = (msg: any) => {
       if (!msg || msg.type !== 'l2_orderbook' || msg.symbol !== symbol) return;
@@ -203,8 +226,8 @@ export function useOrderBook(symbol: string, groupingInterval: number) {
       }
     };
 
-    // Subscribe to WebSocket
-    const unsubscribe = defaultWebSocketService.subscribe<any>(
+    // Subscribe to WebSocket (Only symbol and precision in dependency array)
+    const unsubscribe = defaultWebSocketService.subscribe(
       'l2_orderbook',
       [symbol],
       onMessage
@@ -216,7 +239,11 @@ export function useOrderBook(symbol: string, groupingInterval: number) {
         clearTimeout(throttleTimeoutRef.current);
       }
     };
-  }, [symbol, groupingInterval, precision]);
+  }, [symbol, precision]);
 
-  return state;
+  return {
+    ...state,
+    groupingInterval,
+    setGroupingInterval,
+  };
 }
