@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { defaultWebSocketService } from '../socket/WebSocketService';
 import { useStreaming } from './useStreaming';
-import { DEFAULT_CONFIG, SYMBOL_CONFIGS } from '../utils/constants';
+import { ChannelName, DEFAULT_CONFIG, SYMBOL_CONFIGS } from '../utils/constants';
+import type { L2OrderbookMessage } from '../utils/types';
 
 export interface PriceLevel {
   price: number;
@@ -48,8 +49,8 @@ export function useOrderBook(symbol: string) {
   });
 
   // Track latest message and timeout ref for throttling
-  const latestMessageRef = useRef<any>(null);
-  const throttleTimeoutRef = useRef<any>(null);
+  const latestMessageRef = useRef<L2OrderbookMessage | null>(null);
+  const throttleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevBidsMapRef = useRef<Map<number, number>>(new Map());
   const prevAsksMapRef = useRef<Map<number, number>>(new Map());
   const groupingIntervalRef = useRef(groupingInterval);
@@ -86,8 +87,8 @@ export function useOrderBook(symbol: string) {
   }, [symbol]);
 
   // Helper processing function that can be called either from raw message or from interval change
-  const processOrderBook = (msg: any) => {
-    if (!msg || msg.symbol !== symbol) return;
+  const processOrderBook = (msg: L2OrderbookMessage) => {
+    if (msg.symbol !== symbol) return;
 
     const rawBids: [string, string][] = msg.bids || [];
     const rawAsks: [string, string][] = msg.asks || [];
@@ -210,8 +211,8 @@ export function useOrderBook(symbol: string) {
     if (!isStreaming) return;
 
     // WebSocket message receiver with throttling to 50ms intervals
-    const onMessage = (msg: any) => {
-      if (!msg || msg.type !== 'l2_orderbook' || msg.symbol !== symbol) return;
+    const onMessage = (msg: L2OrderbookMessage) => {
+      if (msg.symbol !== symbol) return;
 
       latestMessageRef.current = msg;
 
@@ -227,7 +228,7 @@ export function useOrderBook(symbol: string) {
 
     // Subscribe to WebSocket (Only symbol and precision in dependency array)
     const unsubscribe = defaultWebSocketService.subscribe(
-      'l2_orderbook',
+      ChannelName.L2_ORDERBOOK,
       [symbol],
       onMessage
     );

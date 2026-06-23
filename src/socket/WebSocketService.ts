@@ -1,6 +1,6 @@
 import { ConnectionState, WEBSOCKET_URL } from "../utils/constants";
 
-import type { TChannelName, TConnectionState } from "../utils/constants";
+import type { TChannelName, ChannelMessageMap, WebSocketChannelMessage, TConnectionState } from "../utils/types";
 
 export interface SubscriptionMessage {
   type: 'subscribe' | 'unsubscribe';
@@ -23,7 +23,7 @@ export class WebSocketService {
   private ws: WebSocket | null = null;
   private connectionState: TConnectionState = ConnectionState.DISCONNECTED;
   private reconnectAttempts = 0;
-  private reconnectTimeoutId: any = null;
+  private reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private maxReconnectDelay = 30000; // 30 seconds
   private baseReconnectDelay = 1000; // 1 second
 
@@ -31,11 +31,11 @@ export class WebSocketService {
   private activeSubscriptions = new Map<TChannelName, Set<string>>();
 
   // Registered listeners (ChannelName -> Map<Symbol, Set<Callback>>)
-  private listeners = new Map<TChannelName, Map<string, Set<(data: any) => void>>>();
+  private listeners = new Map<TChannelName, Map<string, Set<(data: WebSocketChannelMessage) => void>>>();
 
   // Global listeners
   private stateListeners = new Set<(state: TConnectionState) => void>();
-  private globalMessageListeners = new Set<(message: any) => void>();
+  private globalMessageListeners = new Set<(message: WebSocketChannelMessage) => void>();
 
   constructor(url: string) {
     this.url = url;
@@ -96,11 +96,12 @@ export class WebSocketService {
    * @param callback The callback invoked when a matching message arrives.
    * @returns A cleanup function to unsubscribe this specific listener.
    */
-  public subscribe<T = any>(
-    channel: TChannelName,
+  public subscribe<C extends TChannelName>(
+    channel: C,
     symbols: string[],
-    callback: (data: T) => void
+    callback: (data: ChannelMessageMap[C]) => void
   ): () => void {
+    const routedCallback = callback as (data: WebSocketChannelMessage) => void;
     symbols.forEach((symbol) => {
       // 1. Add to listeners structure
       if (!this.listeners.has(channel)) {
@@ -110,7 +111,7 @@ export class WebSocketService {
       if (!symbolMap.has(symbol)) {
         symbolMap.set(symbol, new Set());
       }
-      symbolMap.get(symbol)!.add(callback);
+      symbolMap.get(symbol)!.add(routedCallback);
 
       // 2. Manage subscription status
       if (!this.activeSubscriptions.has(channel)) {
@@ -131,7 +132,7 @@ export class WebSocketService {
 
     // Return the cleanup function for unsubscribing
     return () => {
-      this.unsubscribe(channel, symbols, callback);
+      this.unsubscribe(channel, symbols, routedCallback);
     };
   }
 
@@ -139,10 +140,10 @@ export class WebSocketService {
    * Unsubscribes a callback from the specified channel and symbols.
    * If no callbacks remain for a symbol/channel, sends an unsubscribe request.
    */
-  private unsubscribe<T = any>(
+  private unsubscribe(
     channel: TChannelName,
     symbols: string[],
-    callback: (data: T) => void
+    callback: (data: WebSocketChannelMessage) => void
   ): void {
     symbols.forEach((symbol) => {
       const symbolMap = this.listeners.get(channel);
@@ -192,7 +193,7 @@ export class WebSocketService {
   /**
    * Registers a global listener for all raw messages received from the socket.
    */
-  public addGlobalMessageListener(cb: (message: any) => void): () => void {
+  public addGlobalMessageListener(cb: (message: WebSocketChannelMessage) => void): () => void {
     this.globalMessageListeners.add(cb);
     return () => {
       this.globalMessageListeners.delete(cb);
@@ -213,7 +214,7 @@ export class WebSocketService {
 
     this.ws.onmessage = (event: MessageEvent) => {
       try {
-        const rawData = JSON.parse(event.data);
+        const rawData = JSON.parse(event.data) as WebSocketChannelMessage;
 
         // Dispatch to global listeners
         this.globalMessageListeners.forEach((cb) => cb(rawData));

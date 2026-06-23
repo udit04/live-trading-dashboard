@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { defaultWebSocketService } from '../socket/WebSocketService';
 import { useStreaming } from './useStreaming';
 import { ChannelName } from '../utils/constants';
+import type { V2TickerMessage } from '../utils/types';
 
 export interface TickerData {
   symbol: string;
@@ -35,8 +36,8 @@ export function useTickers() {
     const unsubscribe = defaultWebSocketService.subscribe(
       ChannelName.V2_TICKER,
       ALL_SYMBOLS,
-      (msg) => {
-        if (!msg || !msg.symbol) return;
+      (msg: V2TickerMessage) => {
+        if (!msg.symbol) return;
 
         const change24h = msg.ltp_change_24h
           ? (parseFloat(msg.ltp_change_24h) - 1) * 100

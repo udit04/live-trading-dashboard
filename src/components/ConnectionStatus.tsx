@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { defaultWebSocketService } from '../socket/WebSocketService';
 import { usePageVisible } from '../hooks/usePageVisible';
 
-import type { TConnectionState } from '../utils/constants';
 import { ConnectionState as ConnectionStateConstants } from '../utils/constants';
+import type { TConnectionState } from '../utils/types';
 
 export function ConnectionStatus() {
   const [state, setState] = useState<TConnectionState>(defaultWebSocketService.getConnectionState());

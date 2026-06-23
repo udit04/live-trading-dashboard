@@ -25,16 +25,12 @@ export const PRECISION_MAP_DATA: Record<string, number> = {
     RECONNECTING: 'RECONNECTING',
   } as const;
 
-  export type TConnectionState = typeof ConnectionState[keyof typeof ConnectionState];
-
   export const ChannelName = {
     TICKER: 'ticker',
     V2_TICKER: 'v2/ticker',
     L2_ORDERBOOK: 'l2_orderbook',
     ALL_TRADES: 'all_trades',
   } as const;
-
-  export type TChannelName = typeof ChannelName[keyof typeof ChannelName];
 
   /** Disconnect WebSocket after the tab stays hidden this long (Strategy B). */
   export const HIDDEN_DISCONNECT_MS = 30_000;

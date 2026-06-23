@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { defaultWebSocketService } from '../socket/WebSocketService';
 import { useStreaming } from './useStreaming';
+import { ChannelName } from '../utils/constants';
+import type { AllTradesMessage } from '../utils/types';
 
 export interface AggregatedTrade {
   id: string;
@@ -58,7 +60,7 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
   const [stats, setStats] = useState<RollingStats>(INITIAL_STATS);
 
   // Queues and caching variables using useRef to prevent trigger-loops
-  const rawTradesQueueRef = useRef<any[]>([]);
+  const rawTradesQueueRef = useRef<AllTradesMessage[]>([]);
   const aggregatedTradesRef = useRef<AggregatedTrade[]>([]);
 
   // High-performance rolling statistics structures
@@ -84,13 +86,13 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
     if (!isStreaming) return;
 
     // 1. WebSocket message listener: buffers raw trades to avoid rendering on every tick
-    const onMessage = (msg: any) => {
-      if (!msg || msg.type !== 'all_trades' || msg.symbol !== symbol) return;
+    const onMessage = (msg: AllTradesMessage) => {
+      if (msg.symbol !== symbol) return;
       rawTradesQueueRef.current.push(msg);
     };
 
-    const unsubscribe = defaultWebSocketService.subscribe<any>(
-      'all_trades',
+    const unsubscribe = defaultWebSocketService.subscribe(
+      ChannelName.ALL_TRADES,
       [symbol],
       onMessage
     );
