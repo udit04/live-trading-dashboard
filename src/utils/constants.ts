@@ -26,7 +26,6 @@ export const PRECISION_MAP_DATA: Record<string, number> = {
   } as const;
 
   export const ChannelName = {
-    TICKER: 'ticker',
     V2_TICKER: 'v2/ticker',
     L2_ORDERBOOK: 'l2_orderbook',
     ALL_TRADES: 'all_trades',
