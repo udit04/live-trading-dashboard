@@ -1,6 +1,6 @@
 import { useTickers } from '../hooks/useTickers';
 import type { TickerData } from '../hooks/useTickers';
-import { PRECISION_MAP_DATA } from '../utils/constants';
+import { PRECISION_MAP_DATA, SYMBOLS } from '../utils/constants';
 
 interface TickerBarProps {
   focusedSymbol: string;
@@ -17,12 +17,11 @@ export function formatSymbolPrice(price: number, symbol: string): string {
 
 export function TickerBar({ focusedSymbol, onFocusSymbol }: TickerBarProps) {
   const tickers = useTickers();
-  const symbols = ['BTCUSD', 'ETHUSD', 'XRPUSD', 'SOLUSD', 'PAXGUSD', 'DOGEUSD'];
 
   return (
     <div className="ticker-bar-container">
       <div className="ticker-bar">
-        {symbols.map((symbol) => {
+        {SYMBOLS.map((symbol) => {
           const data: TickerData | undefined = tickers[symbol];
           const isFocused = symbol === focusedSymbol;
           

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 import { defaultWebSocketService } from './socket/WebSocketService';
+import { HIDDEN_DISCONNECT_MS } from './utils/constants';
 import ConnectionStatus from './components/ConnectionStatus';
 import TickerBar from './components/TickerBar';
 import OrderBook from './components/OrderBook';
@@ -17,10 +18,31 @@ function App() {
     return saved ? parseFloat(saved) : 10000;
   });
 
-  // 2. Connect to the WebSocket service when App mounts and disconnect when it unmounts
+  // 2. Connect on mount; pause hooks immediately when tab hidden; disconnect after 30s hidden
   useEffect(() => {
+    let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
     defaultWebSocketService.connect();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        disconnectTimer = setTimeout(() => {
+          defaultWebSocketService.disconnect();
+        }, HIDDEN_DISCONNECT_MS);
+      } else {
+        if (disconnectTimer) {
+          clearTimeout(disconnectTimer);
+          disconnectTimer = null;
+        }
+        defaultWebSocketService.connect();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (disconnectTimer) clearTimeout(disconnectTimer);
       defaultWebSocketService.disconnect();
     };
   }, []);

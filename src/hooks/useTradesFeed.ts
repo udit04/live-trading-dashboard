@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { defaultWebSocketService } from '../socket/WebSocketService';
-import { useWebSocketConnection } from './useWebSocketConnection';
+import { useStreaming } from './useStreaming';
 
 export interface AggregatedTrade {
   id: string;
@@ -53,7 +53,7 @@ function formatTime(timestampMs: number): string {
  * within a 100ms window, and maintaining rolling 60-second execution statistics.
  */
 export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
-  const isConnected = useWebSocketConnection();
+  const isStreaming = useStreaming();
   const [trades, setTrades] = useState<AggregatedTrade[]>([]);
   const [stats, setStats] = useState<RollingStats>(INITIAL_STATS);
 
@@ -68,7 +68,7 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
   const runningSellVolumeRef = useRef<number>(0);
   const runningTradeCountRef = useRef<number>(0);
 
-  // Reset state on symbol change or when the WebSocket disconnects
+  // Reset state on symbol change or when streaming stops (disconnect or tab hidden)
   useEffect(() => {
     setTrades([]);
     setStats(INITIAL_STATS);
@@ -78,10 +78,10 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
     runningBuyVolumeRef.current = 0;
     runningSellVolumeRef.current = 0;
     runningTradeCountRef.current = 0;
-  }, [symbol, isConnected]);
+  }, [symbol, isStreaming]);
 
   useEffect(() => {
-    if (!isConnected) return;
+    if (!isStreaming) return;
 
     // 1. WebSocket message listener: buffers raw trades to avoid rendering on every tick
     const onMessage = (msg: any) => {
@@ -208,7 +208,7 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
       clearInterval(tradesIntervalId);
       clearInterval(statsIntervalId);
     };
-  }, [symbol, largeTradeThreshold, isConnected]);
+  }, [symbol, largeTradeThreshold, isStreaming]);
 
   return { trades, stats };
 }

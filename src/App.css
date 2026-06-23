@@ -32,6 +32,11 @@
   border-color: rgba(255, 179, 0, 0.15);
 }
 
+.connection-status-bar.paused {
+  background-color: #1a1a24;
+  border-color: rgba(120, 120, 160, 0.2);
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -52,6 +57,12 @@
   animation: pulse-dot 1.5s infinite ease-in-out;
 }
 
+.status-dot.paused {
+  background-color: #7880a0;
+  box-shadow: 0 0 8px #7880a0;
+  animation: pulse-dot 2s infinite ease-in-out;
+}
+
 @keyframes pulse-dot {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
@@ -65,6 +76,7 @@
 .status-text.disconnected { color: var(--color-red); }
 .status-text.connecting,
 .status-text.reconnecting { color: #ffb300; }
+.status-text.paused { color: #7880a0; }
 
 .status-details {
   margin-left: auto;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { defaultWebSocketService } from '../socket/WebSocketService';
-import { useWebSocketConnection } from './useWebSocketConnection';
+import { useStreaming } from './useStreaming';
 import { DEFAULT_CONFIG, SYMBOL_CONFIGS } from '../utils/constants';
 
 export interface PriceLevel {
@@ -28,7 +28,7 @@ export interface OrderBookState {
  * Features throttled state updates to maintain UI fluidness and prevent browser freeze under stress.
  */
 export function useOrderBook(symbol: string) {
-  const isConnected = useWebSocketConnection();
+  const isStreaming = useStreaming();
   const config = SYMBOL_CONFIGS[symbol] || DEFAULT_CONFIG;
   const precision = config.precision;
 
@@ -59,7 +59,7 @@ export function useOrderBook(symbol: string) {
     groupingIntervalRef.current = groupingInterval;
   }, [groupingInterval]);
 
-  // Reset order book data when symbol changes or when the WebSocket disconnects
+  // Reset order book data when symbol changes or when streaming stops
   useEffect(() => {
     setState({
       bids: [],
@@ -77,7 +77,7 @@ export function useOrderBook(symbol: string) {
       clearTimeout(throttleTimeoutRef.current);
       throttleTimeoutRef.current = null;
     }
-  }, [symbol, isConnected]);
+  }, [symbol, isStreaming]);
 
   // Reset grouping interval only when the focused symbol changes
   useEffect(() => {
@@ -198,16 +198,16 @@ export function useOrderBook(symbol: string) {
     });
   };
 
-  // Recalculate instantly when groupingInterval changes locally (only while connected)
+  // Recalculate instantly when groupingInterval changes locally (only while streaming)
   useEffect(() => {
-    if (!isConnected) return;
+    if (!isStreaming) return;
     if (latestMessageRef.current) {
       processOrderBook(latestMessageRef.current);
     }
-  }, [groupingInterval, symbol, precision, isConnected]);
+  }, [groupingInterval, symbol, precision, isStreaming]);
 
   useEffect(() => {
-    if (!isConnected) return;
+    if (!isStreaming) return;
 
     // WebSocket message receiver with throttling to 50ms intervals
     const onMessage = (msg: any) => {
@@ -238,7 +238,7 @@ export function useOrderBook(symbol: string) {
         clearTimeout(throttleTimeoutRef.current);
       }
     };
-  }, [symbol, precision, isConnected]);
+  }, [symbol, precision, isStreaming]);
 
   return {
     ...state,
