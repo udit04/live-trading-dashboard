@@ -27,6 +27,12 @@ export interface TradesFeedState {
 }
 
 const MAX_DISPLAY_TRADES = 200;
+const INITIAL_STATS: RollingStats = {
+  buyVolume: 0,
+  sellVolume: 0,
+  tradeCount: 0,
+  avgSize: 0,
+};
 
 /**
  * Format timestamp in milliseconds to HH:MM:SS.ms
@@ -48,10 +54,8 @@ function formatTime(timestampMs: number): string {
  */
 export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
   const isConnected = useWebSocketConnection();
-  const [state, setState] = useState<TradesFeedState>({
-    trades: [],
-    stats: { buyVolume: 0, sellVolume: 0, tradeCount: 0, avgSize: 0 },
-  });
+  const [trades, setTrades] = useState<AggregatedTrade[]>([]);
+  const [stats, setStats] = useState<RollingStats>(INITIAL_STATS);
 
   // Queues and caching variables using useRef to prevent trigger-loops
   const rawTradesQueueRef = useRef<any[]>([]);
@@ -66,10 +70,8 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
 
   // Reset state on symbol change or when the WebSocket disconnects
   useEffect(() => {
-    setState({
-      trades: [],
-      stats: { buyVolume: 0, sellVolume: 0, tradeCount: 0, avgSize: 0 },
-    });
+    setTrades([]);
+    setStats(INITIAL_STATS);
     rawTradesQueueRef.current = [];
     aggregatedTradesRef.current = [];
     statsWindowRef.current = [];
@@ -93,86 +95,31 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
       onMessage
     );
 
-    // 2. Batch and stats processor loop running every 100ms
-    const intervalId = setInterval(() => {
-      const now = Date.now();
-      const cutoff = now - 60000; // 60 seconds ago
+    const publishStatsIfChanged = () => {
+      const buyVolume = Number(runningBuyVolumeRef.current.toFixed(4));
+      const sellVolume = Number(runningSellVolumeRef.current.toFixed(4));
+      const tradeCount = runningTradeCountRef.current;
+      const totalVol = buyVolume + sellVolume;
+      const avgSize = tradeCount > 0 ? Math.round(totalVol / tradeCount) : 0;
 
-      // Retrieve and flush the incoming raw queue
-      const rawQueue = rawTradesQueueRef.current;
-      rawTradesQueueRef.current = [];
-
-      let hasNewTrades = rawQueue.length > 0;
-      let statsUpdated = false;
-
-      // Temporary copy of the aggregated trades list to build updates
-      let updatedTrades = [...aggregatedTradesRef.current];
-
-      // A. Process raw trades in chronological order
-      rawQueue.forEach((raw) => {
-        const timestampMs = Math.floor(raw.timestamp / 1000); // Server is microsecond
-        const price = parseFloat(raw.price);
-        const size = raw.size;
-        const side: 'buy' | 'sell' = raw.buyer_role === 'taker' ? 'buy' : 'sell';
-        const notional = price * size;
-        const isLarge = notional >= largeTradeThreshold;
-
-        // Add to statistics window
-        statsWindowRef.current.push({ timestamp: timestampMs, size, side });
-        if (side === 'buy') {
-          runningBuyVolumeRef.current += size;
-        } else {
-          runningSellVolumeRef.current += size;
-        }
-        runningTradeCountRef.current += 1;
-        statsUpdated = true;
-
-        // Perform 100ms price aggregation:
-        // If the last trade in our aggregated list matches:
-        // - Same price
-        // - Same side
-        // - Within 100ms window of the FIRST trade in that group
-        const lastAggr = updatedTrades[0]; // We prepend new trades so index 0 is latest
+      setStats((prev) => {
         if (
-          lastAggr &&
-          lastAggr.price === price &&
-          lastAggr.side === side &&
-          Math.abs(timestampMs - lastAggr.timestamp) <= 100
+          prev.buyVolume === buyVolume &&
+          prev.sellVolume === sellVolume &&
+          prev.tradeCount === tradeCount &&
+          prev.avgSize === avgSize
         ) {
-          // Merge trade
-          const newSize = lastAggr.size + size;
-          const newNotional = price * newSize;
-          lastAggr.size = newSize;
-          lastAggr.count += 1;
-          lastAggr.notional = newNotional;
-          lastAggr.isLarge = newNotional >= largeTradeThreshold;
-        } else {
-          // Add new trade row
-          const newTradeRow: AggregatedTrade = {
-            id: `${raw.symbol}-${timestampMs}-${Math.random()}`,
-            timestamp: timestampMs,
-            timeStr: formatTime(timestampMs),
-            price,
-            size,
-            side,
-            count: 1,
-            notional,
-            isLarge,
-          };
-          // Prepend to make newest trades appear at the top of the feed
-          updatedTrades.unshift(newTradeRow);
+          return prev;
         }
+        return { buyVolume, sellVolume, tradeCount, avgSize };
       });
+    };
 
-      // B. Cap trade array length to prevent memory consumption
-      if (updatedTrades.length > MAX_DISPLAY_TRADES) {
-        updatedTrades = updatedTrades.slice(0, MAX_DISPLAY_TRADES);
-      }
-      aggregatedTradesRef.current = updatedTrades;
-
-      // C. Prune expired entries from the rolling stats window
+    const pruneStatsWindow = (now: number) => {
+      const cutoff = now - 60000;
       const statsWindow = statsWindowRef.current;
       let pruneIndex = 0;
+
       while (pruneIndex < statsWindow.length && statsWindow[pruneIndex].timestamp < cutoff) {
         const expired = statsWindow[pruneIndex];
         if (expired.side === 'buy') {
@@ -182,38 +129,86 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
         }
         runningTradeCountRef.current = Math.max(0, runningTradeCountRef.current - 1);
         pruneIndex++;
-        statsUpdated = true;
       }
 
-      // Slice the pruned elements off the front
       if (pruneIndex > 0) {
         statsWindowRef.current = statsWindow.slice(pruneIndex);
       }
+    };
 
-      // D. Trigger state update if changes occurred
-      if (hasNewTrades || statsUpdated) {
-        const totalVol = runningBuyVolumeRef.current + runningSellVolumeRef.current;
-        const avgSize = runningTradeCountRef.current > 0
-          ? totalVol / runningTradeCountRef.current
-          : 0;
+    // 2. Trade batch processor running every 100ms
+    const tradesIntervalId = setInterval(() => {
+      const rawQueue = rawTradesQueueRef.current;
+      rawTradesQueueRef.current = [];
 
-        setState({
-          trades: updatedTrades,
-          stats: {
-            buyVolume: Number(runningBuyVolumeRef.current.toFixed(4)),
-            sellVolume: Number(runningSellVolumeRef.current.toFixed(4)),
-            tradeCount: runningTradeCountRef.current,
-            avgSize: Number(avgSize.toFixed(4)),
-          },
-        });
+      if (rawQueue.length === 0) return;
+
+      let updatedTrades = [...aggregatedTradesRef.current];
+
+      rawQueue.forEach((raw) => {
+        const timestampMs = Math.floor(raw.timestamp / 1000); // Server is microsecond
+        const price = parseFloat(raw.price);
+        const size = raw.size;
+        const side: 'buy' | 'sell' = raw.buyer_role === 'taker' ? 'buy' : 'sell';
+        const notional = price * size;
+        const isLarge = notional >= largeTradeThreshold;
+
+        statsWindowRef.current.push({ timestamp: timestampMs, size, side });
+        if (side === 'buy') {
+          runningBuyVolumeRef.current += size;
+        } else {
+          runningSellVolumeRef.current += size;
+        }
+        runningTradeCountRef.current += 1;
+
+        const lastAggr = updatedTrades[0];
+        if (
+          lastAggr &&
+          lastAggr.price === price &&
+          lastAggr.side === side &&
+          Math.abs(timestampMs - lastAggr.timestamp) <= 100
+        ) {
+          const newSize = lastAggr.size + size;
+          const newNotional = price * newSize;
+          lastAggr.size = newSize;
+          lastAggr.count += 1;
+          lastAggr.notional = newNotional;
+          lastAggr.isLarge = newNotional >= largeTradeThreshold;
+        } else {
+          updatedTrades.unshift({
+            id: `${raw.symbol}-${timestampMs}-${Math.random()}`,
+            timestamp: timestampMs,
+            timeStr: formatTime(timestampMs),
+            price,
+            size,
+            side,
+            count: 1,
+            notional,
+            isLarge,
+          });
+        }
+      });
+
+      if (updatedTrades.length > MAX_DISPLAY_TRADES) {
+        updatedTrades = updatedTrades.slice(0, MAX_DISPLAY_TRADES);
       }
+
+      aggregatedTradesRef.current = updatedTrades;
+      setTrades(updatedTrades);
     }, 100);
+
+    // 3. Rolling stats processor running every second
+    const statsIntervalId = setInterval(() => {
+      pruneStatsWindow(Date.now());
+      publishStatsIfChanged();
+    }, 1000);
 
     return () => {
       unsubscribe();
-      clearInterval(intervalId);
+      clearInterval(tradesIntervalId);
+      clearInterval(statsIntervalId);
     };
   }, [symbol, largeTradeThreshold, isConnected]);
 
-  return state;
+  return { trades, stats };
 }

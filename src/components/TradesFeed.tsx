@@ -144,7 +144,7 @@ export function JumpToLatest({
   onClick: () => void;
 }) {
   if (!visible) return null;
-
+  
   return (
     <div className="jump-to-latest-container">
       <button className="btn-jump-to-latest" onClick={onClick}>
@@ -179,7 +179,7 @@ export function RollingStatsBar({
       </div>
       <div className="stat-item">
         <span className="stat-label">Avg Size</span>
-        <span className="stat-val">{formatSize(stats.avgSize)} {assetName}</span>
+        <span className="stat-val">{stats.avgSize} {assetName}</span>
       </div>
     </div>
   );
@@ -192,7 +192,6 @@ export function TradesFeed({
   onThresholdChange,
 }: TradesFeedProps) {
   const feed = useTradesFeed(symbol, largeTradeThreshold);
-  console.log('trade render', feed);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);

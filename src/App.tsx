@@ -36,8 +36,6 @@ function App() {
     localStorage.setItem('largeTradeThreshold', val.toString());
   };
 
-  console.log('render--->');
-
   return (
     <div className="dashboard-container">
       {/* Top 1: Connection Status indicator */}
