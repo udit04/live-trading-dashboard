@@ -33,7 +33,7 @@ export interface V2TickerMessage {
 }
 
 export interface TickerMessage {
-  type: typeof ChannelName.TICKER;
+  type: typeof ChannelName.V2_TICKER;
   symbol: string;
   close?: number;
   ltp_change_24h?: string;
@@ -47,7 +47,6 @@ export type ChannelMessageMap = {
   [ChannelName.ALL_TRADES]: AllTradesMessage;
   [ChannelName.L2_ORDERBOOK]: L2OrderbookMessage;
   [ChannelName.V2_TICKER]: V2TickerMessage;
-  [ChannelName.TICKER]: TickerMessage;
 };
 
 export type TChannelName = typeof ChannelName[keyof typeof ChannelName];

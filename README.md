@@ -1,75 +1,41 @@
-# React + TypeScript + Vite
+# Live Trading Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This repository contains a real-time crypto derivatives trading dashboard built with Vite(React and TypeScript)
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. **Backend**: Clone and run the stress-test backend from [socket-custom-load](https://github.com/saxenanickk/socket-custom-load).
+   ```bash
+   git clone https://github.com/saxenanickk/socket-custom-load.git
+   cd socket-custom-load
+   npm install
+   npm start
+   ```
 
-## React Compiler
+2. **Frontend**:
+   ```bash
+   cd /path/to/Live-Trading-Dashboard
+   npm install
+   npm run dev
+   ```
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+3. Open `http://localhost:5173` in your browser.
 
-Note: This will impact Vite dev & build performances.
+## Architecture
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for an overview of the design and performance strategies.
 
-## Expanding the ESLint configuration
+## Prompts
+See [Prompts.md](./Prompts.md) for an overview of prompts used while building the project
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Notes
+- UI mockup is based on the provided wireframe screenshot.
+- Click a ticker in the horizontal bar to focus a product; the order book and trades panels will automatically subscribe/unsubscribe.
+- Order book grouping can be changed via the chips above the table; options depend on the symbol's price precision.
+- Trade feed merges trades at the same price within 100 ms and provides rolling stats and a large‑trade threshold control.
+- The application uses a single WebSocket connection to subscribe to multiple channels depending on the focused symbol.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Available Scripts
+- `npm run dev` - start development server
+- `npm run build` - build production bundle
+- `npm run preview` - preview production build
+- `npm run lint` - run eslint
