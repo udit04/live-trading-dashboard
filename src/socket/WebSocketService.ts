@@ -1,4 +1,4 @@
-import { ConnectionState } from "../utils/constants";
+import { ConnectionState, WEBSOCKET_URL } from "../utils/constants";
 
 import type { TChannelName, TConnectionState } from "../utils/constants";
 
@@ -345,4 +345,4 @@ export class WebSocketService {
 }
 
 // Create and export a default workspace instance (connecting to localhost by default)
-export const defaultWebSocketService = new WebSocketService('ws://localhost:8080');
+export const defaultWebSocketService = new WebSocketService(WEBSOCKET_URL);

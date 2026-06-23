@@ -40,3 +40,5 @@ export const PRECISION_MAP_DATA: Record<string, number> = {
   export const HIDDEN_DISCONNECT_MS = 30_000;
 
   export const SYMBOLS = ['BTCUSD', 'ETHUSD', 'XRPUSD', 'SOLUSD', 'PAXGUSD', 'DOGEUSD'];
+
+  export const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8080';
