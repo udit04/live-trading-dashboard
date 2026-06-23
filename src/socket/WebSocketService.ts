@@ -1,19 +1,12 @@
-export type ChannelName = 'v2/ticker' | 'ticker' | 'l2_orderbook' | 'all_trades';
+import { ConnectionState } from "../utils/constants";
 
-export const ConnectionState = {
-  DISCONNECTED: 'DISCONNECTED',
-  CONNECTING: 'CONNECTING',
-  CONNECTED: 'CONNECTED',
-  RECONNECTING: 'RECONNECTING',
-} as const;
-
-export type ConnectionState = typeof ConnectionState[keyof typeof ConnectionState];
+import type { TChannelName, TConnectionState } from "../utils/constants";
 
 export interface SubscriptionMessage {
   type: 'subscribe' | 'unsubscribe';
   payload: {
     channels: Array<{
-      name: ChannelName;
+      name: TChannelName
       symbols?: string[];
     }>;
   };
@@ -28,20 +21,20 @@ export interface SubscriptionMessage {
 export class WebSocketService {
   private url: string;
   private ws: WebSocket | null = null;
-  private connectionState: ConnectionState = ConnectionState.DISCONNECTED;
+  private connectionState: TConnectionState = ConnectionState.DISCONNECTED;
   private reconnectAttempts = 0;
   private reconnectTimeoutId: any = null;
   private maxReconnectDelay = 30000; // 30 seconds
   private baseReconnectDelay = 1000; // 1 second
 
   // Active subscriptions tracked for resubscription on reconnect (ChannelName -> Set of Symbols)
-  private activeSubscriptions = new Map<ChannelName, Set<string>>();
+  private activeSubscriptions = new Map<TChannelName, Set<string>>();
 
   // Registered listeners (ChannelName -> Map<Symbol, Set<Callback>>)
-  private listeners = new Map<ChannelName, Map<string, Set<(data: any) => void>>>();
+  private listeners = new Map<TChannelName, Map<string, Set<(data: any) => void>>>();
 
   // Global listeners
-  private stateListeners = new Set<(state: ConnectionState) => void>();
+  private stateListeners = new Set<(state: TConnectionState) => void>();
   private globalMessageListeners = new Set<(message: any) => void>();
 
   constructor(url: string) {
@@ -51,7 +44,7 @@ export class WebSocketService {
   /**
    * Returns the current connection state.
    */
-  public getConnectionState(): ConnectionState {
+  public getConnectionState(): TConnectionState {
     return this.connectionState;
   }
 
@@ -104,7 +97,7 @@ export class WebSocketService {
    * @returns A cleanup function to unsubscribe this specific listener.
    */
   public subscribe<T = any>(
-    channel: ChannelName,
+    channel: TChannelName,
     symbols: string[],
     callback: (data: T) => void
   ): () => void {
@@ -147,7 +140,7 @@ export class WebSocketService {
    * If no callbacks remain for a symbol/channel, sends an unsubscribe request.
    */
   private unsubscribe<T = any>(
-    channel: ChannelName,
+    channel: TChannelName,
     symbols: string[],
     callback: (data: T) => void
   ): void {
@@ -187,7 +180,7 @@ export class WebSocketService {
   /**
    * Registers a listener for connection state changes (e.g. CONNECTING, CONNECTED, etc.)
    */
-  public addStateListener(cb: (state: ConnectionState) => void): () => void {
+  public addStateListener(cb: (state: TConnectionState) => void): () => void {
     this.stateListeners.add(cb);
     // Trigger immediately with current state
     cb(this.connectionState);
@@ -226,7 +219,7 @@ export class WebSocketService {
         this.globalMessageListeners.forEach((cb) => cb(rawData));
 
         // Route to specific subscribers based on channel type and symbol
-        const channelName = rawData.type as ChannelName;
+        const channelName = rawData.type as TChannelName;
         const symbol = rawData.symbol;
 
         if (channelName && symbol) {
@@ -266,6 +259,12 @@ export class WebSocketService {
     const delayWithJitter = Math.min(this.maxReconnectDelay, rawDelay) + Math.random() * 1000;
 
     this.reconnectAttempts++;
+    // max reconnect attempts is 10
+    if (this.reconnectAttempts > 10) {
+      console.error('WebSocket disconnected. Max reconnect attempts reached.');
+      this.disconnect();
+      return;
+    }
     console.warn(`WebSocket disconnected. Retrying in ${Math.round(delayWithJitter)}ms (Attempt ${this.reconnectAttempts})...`);
 
     this.reconnectTimeoutId = setTimeout(() => {
@@ -280,7 +279,7 @@ export class WebSocketService {
   private resubscribeAll(): void {
     if (this.activeSubscriptions.size === 0) return;
 
-    const channelsToSubscribe: Array<{ name: ChannelName; symbols: string[] }> = [];
+    const channelsToSubscribe: Array<{ name: TChannelName; symbols: string[] }> = [];
 
     this.activeSubscriptions.forEach((symbols, channel) => {
       if (symbols.size > 0) {
@@ -299,7 +298,7 @@ export class WebSocketService {
     });
   }
 
-  private sendSubscribeRequest(channel: ChannelName, symbols: string[]): void {
+  private sendSubscribeRequest(channel: TChannelName, symbols: string[]): void {
     this.sendRaw({
       type: 'subscribe',
       payload: {
@@ -308,7 +307,7 @@ export class WebSocketService {
     });
   }
 
-  private sendUnsubscribeRequest(channel: ChannelName, symbols: string[]): void {
+  private sendUnsubscribeRequest(channel: TChannelName, symbols: string[]): void {
     this.sendRaw({
       type: 'unsubscribe',
       payload: {
@@ -330,7 +329,7 @@ export class WebSocketService {
     }
   }
 
-  private setConnectionState(state: ConnectionState): void {
+  private setConnectionState(state: TConnectionState): void {
     if (this.connectionState !== state) {
       this.connectionState = state;
       this.stateListeners.forEach((cb) => cb(state));

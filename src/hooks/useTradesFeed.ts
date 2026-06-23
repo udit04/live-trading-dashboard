@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { defaultWebSocketService } from '../socket/WebSocketService';
+import { useWebSocketConnection } from './useWebSocketConnection';
 
 export interface AggregatedTrade {
   id: string;
@@ -46,6 +47,7 @@ function formatTime(timestampMs: number): string {
  * within a 100ms window, and maintaining rolling 60-second execution statistics.
  */
 export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
+  const isConnected = useWebSocketConnection();
   const [state, setState] = useState<TradesFeedState>({
     trades: [],
     stats: { buyVolume: 0, sellVolume: 0, tradeCount: 0, avgSize: 0 },
@@ -54,7 +56,7 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
   // Queues and caching variables using useRef to prevent trigger-loops
   const rawTradesQueueRef = useRef<any[]>([]);
   const aggregatedTradesRef = useRef<AggregatedTrade[]>([]);
-  
+
   // High-performance rolling statistics structures
   // Array of { timestamp, size, side } for trades in the last 60 seconds
   const statsWindowRef = useRef<Array<{ timestamp: number; size: number; side: 'buy' | 'sell' }>>([]);
@@ -62,7 +64,7 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
   const runningSellVolumeRef = useRef<number>(0);
   const runningTradeCountRef = useRef<number>(0);
 
-  // Reset state on symbol change
+  // Reset state on symbol change or when the WebSocket disconnects
   useEffect(() => {
     setState({
       trades: [],
@@ -74,9 +76,11 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
     runningBuyVolumeRef.current = 0;
     runningSellVolumeRef.current = 0;
     runningTradeCountRef.current = 0;
-  }, [symbol]);
+  }, [symbol, isConnected]);
 
   useEffect(() => {
+    if (!isConnected) return;
+
     // 1. WebSocket message listener: buffers raw trades to avoid rendering on every tick
     const onMessage = (msg: any) => {
       if (!msg || msg.type !== 'all_trades' || msg.symbol !== symbol) return;
@@ -189,8 +193,8 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
       // D. Trigger state update if changes occurred
       if (hasNewTrades || statsUpdated) {
         const totalVol = runningBuyVolumeRef.current + runningSellVolumeRef.current;
-        const avgSize = runningTradeCountRef.current > 0 
-          ? totalVol / runningTradeCountRef.current 
+        const avgSize = runningTradeCountRef.current > 0
+          ? totalVol / runningTradeCountRef.current
           : 0;
 
         setState({
@@ -209,7 +213,7 @@ export function useTradesFeed(symbol: string, largeTradeThreshold: number) {
       unsubscribe();
       clearInterval(intervalId);
     };
-  }, [symbol, largeTradeThreshold]);
+  }, [symbol, largeTradeThreshold, isConnected]);
 
   return state;
 }

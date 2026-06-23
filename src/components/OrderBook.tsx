@@ -1,5 +1,6 @@
-import { useOrderBook, SYMBOL_CONFIGS } from '../hooks/useOrderBook';
+import { useOrderBook } from '../hooks/useOrderBook';
 import type { PriceLevel } from '../hooks/useOrderBook';
+import { SYMBOL_CONFIGS } from '../utils/constants';
 
 interface OrderBookProps {
   symbol: string;

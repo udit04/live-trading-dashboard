@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { defaultWebSocketService } from '../socket/WebSocketService';
+import { useWebSocketConnection } from './useWebSocketConnection';
 
 export interface TickerData {
   symbol: string;
@@ -20,9 +21,15 @@ const ALL_SYMBOLS = ['BTCUSD', 'ETHUSD', 'XRPUSD', 'SOLUSD', 'PAXGUSD', 'DOGEUSD
  * so they only re-render when their specific TickerData changes.
  */
 export function useTickers() {
+  const isConnected = useWebSocketConnection();
   const [tickers, setTickers] = useState<Record<string, TickerData>>({});
 
   useEffect(() => {
+    if (!isConnected) {
+      setTickers({});
+      return;
+    }
+
     // Subscribe to all symbols simultaneously on the v2/ticker channel
     const unsubscribe = defaultWebSocketService.subscribe(
       'v2/ticker',
@@ -54,7 +61,7 @@ export function useTickers() {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [isConnected]);
 
   return tickers;
 }

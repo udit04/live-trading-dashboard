@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { useTradesFeed } from '../hooks/useTradesFeed';
 import type { AggregatedTrade, RollingStats } from '../hooks/useTradesFeed';
+import { PRECISION_MAP_DATA } from '../utils/constants';
 
 interface TradesFeedProps {
   symbol: string;
@@ -62,15 +63,7 @@ export function LargeTrade({
 
 // Helper to format values
 function formatPrice(val: number, symbol: string): string {
-  const precisionMap: Record<string, number> = {
-    BTCUSD: 1,
-    ETHUSD: 2,
-    XRPUSD: 4,
-    SOLUSD: 4,
-    PAXGUSD: 2,
-    DOGEUSD: 6,
-  };
-  const precision = precisionMap[symbol] ?? 2;
+  const precision = PRECISION_MAP_DATA[symbol] ?? 2;
   return val.toLocaleString(undefined, {
     minimumFractionDigits: precision,
     maximumFractionDigits: precision,
@@ -198,8 +191,8 @@ export function TradesFeed({
   largeTradeThreshold,
   onThresholdChange,
 }: TradesFeedProps) {
-  console.log('trade render');
   const feed = useTradesFeed(symbol, largeTradeThreshold);
+  console.log('trade render', feed);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);

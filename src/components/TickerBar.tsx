@@ -1,5 +1,6 @@
 import { useTickers } from '../hooks/useTickers';
 import type { TickerData } from '../hooks/useTickers';
+import { PRECISION_MAP_DATA } from '../utils/constants';
 
 interface TickerBarProps {
   focusedSymbol: string;
@@ -7,15 +8,7 @@ interface TickerBarProps {
 }
 
 export function formatSymbolPrice(price: number, symbol: string): string {
-  const precisionMap: Record<string, number> = {
-    BTCUSD: 1,
-    ETHUSD: 2,
-    XRPUSD: 4,
-    SOLUSD: 4,
-    PAXGUSD: 2,
-    DOGEUSD: 6,
-  };
-  const precision = precisionMap[symbol] ?? 2;
+  const precision = PRECISION_MAP_DATA[symbol] ?? 2;
   return price.toLocaleString(undefined, {
     minimumFractionDigits: precision,
     maximumFractionDigits: precision,

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { defaultWebSocketService } from '../socket/WebSocketService';
+import { useWebSocketConnection } from './useWebSocketConnection';
+import { DEFAULT_CONFIG, SYMBOL_CONFIGS } from '../utils/constants';
 
 export interface PriceLevel {
   price: number;
@@ -18,16 +20,6 @@ export interface OrderBookState {
   isLoading: boolean;
 }
 
-export const SYMBOL_CONFIGS: Record<string, { precision: number; groupingOptions: number[] }> = {
-  BTCUSD: { precision: 1, groupingOptions: [1, 5, 10, 50, 100, 500] },
-  ETHUSD: { precision: 2, groupingOptions: [0.50, 1, 5, 10, 50] },
-  XRPUSD: { precision: 4, groupingOptions: [0.0001, 0.001, 0.01, 0.1] },
-  SOLUSD: { precision: 4, groupingOptions: [0.0001, 0.001, 0.01, 0.1] },
-  PAXGUSD: { precision: 2, groupingOptions: [0.50, 1, 5, 10, 50] },
-  DOGEUSD: { precision: 6, groupingOptions: [0.000001, 0.00001, 0.0001, 0.001, 0.01] },
-};
-
-const DEFAULT_CONFIG = { precision: 2, groupingOptions: [0.01, 0.1, 1, 5, 10] };
 
 /**
  * useOrderBook Hook
@@ -36,6 +28,7 @@ const DEFAULT_CONFIG = { precision: 2, groupingOptions: [0.01, 0.1, 1, 5, 10] };
  * Features throttled state updates to maintain UI fluidness and prevent browser freeze under stress.
  */
 export function useOrderBook(symbol: string) {
+  const isConnected = useWebSocketConnection();
   const config = SYMBOL_CONFIGS[symbol] || DEFAULT_CONFIG;
   const precision = config.precision;
 
@@ -66,7 +59,7 @@ export function useOrderBook(symbol: string) {
     groupingIntervalRef.current = groupingInterval;
   }, [groupingInterval]);
 
-  // Reset state when symbol changes
+  // Reset order book data when symbol changes or when the WebSocket disconnects
   useEffect(() => {
     setState({
       bids: [],
@@ -84,7 +77,10 @@ export function useOrderBook(symbol: string) {
       clearTimeout(throttleTimeoutRef.current);
       throttleTimeoutRef.current = null;
     }
-    // Update local groupingInterval state to the default for this symbol
+  }, [symbol, isConnected]);
+
+  // Reset grouping interval only when the focused symbol changes
+  useEffect(() => {
     const newConfig = SYMBOL_CONFIGS[symbol] || DEFAULT_CONFIG;
     setGroupingInterval(newConfig.groupingOptions[0]);
   }, [symbol]);
@@ -202,14 +198,17 @@ export function useOrderBook(symbol: string) {
     });
   };
 
-  // Recalculate instantly when groupingInterval changes locally
+  // Recalculate instantly when groupingInterval changes locally (only while connected)
   useEffect(() => {
+    if (!isConnected) return;
     if (latestMessageRef.current) {
       processOrderBook(latestMessageRef.current);
     }
-  }, [groupingInterval, symbol, precision]);
+  }, [groupingInterval, symbol, precision, isConnected]);
 
   useEffect(() => {
+    if (!isConnected) return;
+
     // WebSocket message receiver with throttling to 50ms intervals
     const onMessage = (msg: any) => {
       if (!msg || msg.type !== 'l2_orderbook' || msg.symbol !== symbol) return;
@@ -239,7 +238,7 @@ export function useOrderBook(symbol: string) {
         clearTimeout(throttleTimeoutRef.current);
       }
     };
-  }, [symbol, precision]);
+  }, [symbol, precision, isConnected]);
 
   return {
     ...state,
